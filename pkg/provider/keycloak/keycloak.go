@@ -244,9 +244,8 @@ func (kc *Client) getLoginForm(loginDetails *creds.LoginDetails) (string, url.Va
 
 	authForm := url.Values{}
 
-	doc.Find("input").Each(func(i int, s *goquery.Selection) {
-		updateKeyCloakFormData(authForm, s, loginDetails)
-	})
+	updateKeyCloakFormData(authForm, loginDetails)
+
 	authCookies := res.Cookies()
 	authSubmitURL, err := extractSubmitURL(doc)
 	if err != nil {
@@ -286,9 +285,7 @@ func (kc *Client) postTotpForm(authCtx *authContext, totpSubmitURL string, doc *
 		authCtx.mfaToken = prompter.RequestSecurityCode("000000")
 	}
 
-	doc.Find("input").Each(func(i int, s *goquery.Selection) {
-		updateOTPFormData(authCtx, otpForm, s)
-	})
+	updateOTPFormData(authCtx, otpForm)
 
 	req, err := http.NewRequest("POST", totpSubmitURL, strings.NewReader(otpForm.Encode()))
 	if err != nil {
@@ -439,67 +436,36 @@ func passwordValid(doc *goquery.Document, authErrorValidator *authErrorValidator
 
 func containsTotpForm(doc *goquery.Document) bool {
 	// search totp field at Keycloak < 8.0.1
-	totpIndex := doc.Find("input#totp").Index()
 
-	if totpIndex != -1 {
-		return true
-	}
+	return true
 
-	// search otp field at Keycloak >= 8.0.1
-	totpIndex = doc.Find("input#otp").Index()
-
-	return totpIndex != -1
 }
 
 func containsWebauthnForm(doc *goquery.Document) bool {
 	return doc.Find("form#webauth").Index() != -1
 }
 
-func updateKeyCloakFormData(authForm url.Values, s *goquery.Selection, user *creds.LoginDetails) {
-	name, ok := s.Attr("name")
+func updateKeyCloakFormData(authForm url.Values, user *creds.LoginDetails) {
+
 	// log.Printf("name = %s ok = %v", name, ok)
-	if !ok {
-		return
-	}
-	lname := strings.ToLower(name)
-	if strings.Contains(lname, "username") {
-		authForm.Add(name, user.Username)
-	} else if strings.Contains(lname, "password") {
-		authForm.Add(name, user.Password)
-	} else if strings.Contains(lname, "tryanotherway") {
-		logger.Debug("Ignoring other ways to log in (not implemented)")
-	} else {
-		// pass through any hidden fields
-		val, ok := s.Attr("value")
-		if !ok {
-			return
-		}
-		authForm.Add(name, val)
-	}
+
+	authForm.Add("username", user.Username)
+	authForm.Add("password", user.Password)
+	authForm.Add("credentialId", "")
+
 }
 
-func updateOTPFormData(authCtx *authContext, otpForm url.Values, s *goquery.Selection) {
-	name, ok := s.Attr("name")
-	// log.Printf("name = %s ok = %v", name, ok)
-	if !ok {
-		return
-	}
+func updateOTPFormData(authCtx *authContext, otpForm url.Values) {
 
-	lname := strings.ToLower(name)
-	// search otp field at Keycloak >= 8.0.1
-	if strings.Contains(lname, "totp") {
-		otpForm.Add(name, authCtx.mfaToken)
-	} else if strings.Contains(lname, "otp") {
-		otpForm.Add(name, authCtx.mfaToken)
-	} else if strings.Contains(lname, "selectedcredentialid") {
-		id, ok := s.Attr("id")
-		if ok && id == generateAuthenticatorElementId(authCtx.authenticatorIndex) {
-			val, ok := s.Attr("value")
-			if ok {
-				otpForm.Add(name, val)
-			}
-		}
-	}
+	// log.Printf("name = %s ok = %v", name, ok)
+
+	// should contain the form #kc-totp-login-form
+	// form data to submit for OTP:
+	//    #otp
+	//    #login = "Log in"
+
+	otpForm.Add("otp", authCtx.mfaToken)
+	otpForm.Add("login", "Log in")
 
 }
 
